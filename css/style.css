@@ -48,8 +48,6 @@ body {
   position: relative;
   width: 100vw;
   height: 100vh;
-  max-width: 1200px;
-  max-height: 900px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -59,14 +57,14 @@ body {
 
 /* 웹캠 & 캔버스 레이어 */
 .webcam-container {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   z-index: 1;
   overflow: hidden;
-  background-color: #000;
+  background-color: #0f172a;
 }
 
 #webcam-video {
@@ -74,7 +72,7 @@ body {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1); /* 거울 모드 (미러링) */
-  filter: brightness(0.85) contrast(1.05);
+  filter: brightness(1) contrast(1.02);
 }
 
 #webcam-canvas {

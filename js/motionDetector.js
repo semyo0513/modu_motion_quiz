@@ -19,6 +19,7 @@ class MotionDetector {
     this.faceLandmarker = null;
     this.handLandmarker = null;
     this.isRunning = false;
+    this.isAiReady = false;
     this.stream = null;
     
     // 모션 판정 파라미터
@@ -31,38 +32,128 @@ class MotionDetector {
     this.isConfirmed = false;     // 현재 문제에서 이미 확정되었는지 여부
     
     this.animationFrameId = null;
+    this.lastVideoTime = -1;
   }
 
   /**
-   * MediaPipe 모듈 및 웹캠 초기화
+   * 1단계: 카메라 우선 실행 -> 2단계: 백그라운드 AI 모델 로딩
    */
   async init() {
     try {
-      this.onStatusChange("AI 모션 인식 모델을 불러오는 중...", false);
+      this.onStatusChange("카메라를 켜는 중입니다...", false);
 
-      // MediaPipe Tasks-Vision 로딩 대기
-      if (!window.FilesetResolver || !window.FaceLandmarker) {
-        throw new Error("MediaPipe 스크립트가 아직 로드되지 않았습니다.");
-      }
+      // 1. 카메라 스트림 즉시 시작 (화면에 영상이 바로 나오도록 최우선 처리)
+      await this._startCamera();
+      this.isRunning = true;
+      this.onStatusChange("카메라 연결 성공! AI 인식 모델을 불러옵니다...", false);
 
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-      );
-
-      // 1. FaceLandmarker 초기화
-      this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          delegate: "GPU"
-        },
-        outputFaceBlendshapes: false,
-        runningMode: "VIDEO",
-        numFaces: 1
+      // 2. 백그라운드에서 AI 비전 모델 로드
+      this._loadAiModels().then((success) => {
+        if (success) {
+          this.isAiReady = true;
+          this.onStatusChange("모션 인식이 준비되었습니다! 고개를 기울여보세요.", true);
+        } else {
+          this.onStatusChange("모션 인식 모델 연결 실패 (마우스/키보드로 플레이 가능)", false);
+        }
+      }).catch(err => {
+        console.warn("[MotionDetector] AI 모델 로드 경고:", err);
+        this.onStatusChange("모션 인식 모델 로드 지연 (마우스/키보드로 즉시 플레이 가능)", false);
       });
 
-      // 2. HandLandmarker 초기화 (손가락 모드용)
-      if (window.HandLandmarker) {
-        this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      // 3. 루프 시작
+      this._predictLoop();
+      return true;
+    } catch (err) {
+      console.error("[MotionDetector] 카메라 실행 실패:", err);
+      this.onStatusChange("카메라 접근 불가 (마우스/키보드로 플레이 가능)", false);
+      return false;
+    }
+  }
+
+  /**
+   * 웹캠 스트림 획득 및 video 태그 재생
+   */
+  async _startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("브라우저가 웹캠 접근을 지원하지 않습니다.");
+    }
+
+    const constraints = {
+      video: {
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 },
+        facingMode: "user"
+      },
+      audio: false
+    };
+
+    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    if (this.videoElement) {
+      this.videoElement.srcObject = this.stream;
+      this.videoElement.setAttribute("playsinline", "true");
+      this.videoElement.setAttribute("autoplay", "true");
+      this.videoElement.muted = true;
+
+      // 비디오 메타데이터 로드 대기 (안전장치 2초 타임아웃 포함)
+      await new Promise((resolve) => {
+        if (this.videoElement.readyState >= 2) {
+          resolve();
+        } else {
+          const onLoaded = () => {
+            this.videoElement.removeEventListener("loadeddata", onLoaded);
+            this.videoElement.removeEventListener("loadedmetadata", onLoaded);
+            resolve();
+          };
+          this.videoElement.addEventListener("loadeddata", onLoaded);
+          this.videoElement.addEventListener("loadedmetadata", onLoaded);
+          setTimeout(resolve, 2000);
+        }
+      });
+
+      // 명시적 play 호출
+      try {
+        await this.videoElement.play();
+      } catch (playErr) {
+        console.warn("[MotionDetector] video.play() 자동재생 차단 예외 처리:", playErr);
+      }
+    }
+  }
+
+  /**
+   * MediaPipe Tasks-Vision 모델 로드
+   */
+  async _loadAiModels() {
+    // FilesetResolver 로드 대기 (최대 10초 대기)
+    let retries = 0;
+    while ((!window.FilesetResolver || !window.FaceLandmarker) && retries < 20) {
+      await new Promise(r => setTimeout(r, 500));
+      retries++;
+    }
+
+    if (!window.FilesetResolver || !window.FaceLandmarker) {
+      throw new Error("MediaPipe SDK 라이브러리를 불러올 수 없습니다.");
+    }
+
+    const vision = await window.FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+
+    // FaceLandmarker 생성
+    this.faceLandmarker = await window.FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU"
+      },
+      outputFaceBlendshapes: false,
+      runningMode: "VIDEO",
+      numFaces: 1
+    });
+
+    // HandLandmarker 생성 (손가락 모드)
+    if (window.HandLandmarker) {
+      try {
+        this.handLandmarker = await window.HandLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
             delegate: "GPU"
@@ -70,46 +161,12 @@ class MotionDetector {
           runningMode: "VIDEO",
           numHands: 1
         });
+      } catch (handErr) {
+        console.warn("[MotionDetector] HandLandmarker 로드 실패 (고개 기울임 모드는 정상 작동):", handErr);
       }
-
-      // 웹캠 스트림 시작
-      await this._startCamera();
-
-      this.isRunning = true;
-      this.onStatusChange("카메라와 모션 인식이 준비되었습니다!", true);
-      this._predictLoop();
-      return true;
-    } catch (err) {
-      console.error("[MotionDetector] 초기화 실패:", err);
-      this.onStatusChange("웹캠 또는 AI 모델 로딩 실패 (클릭으로 플레이 가능)", false);
-      return false;
-    }
-  }
-
-  async _startCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("이 브라우저는 웹캠 접근을 지원하지 않습니다.");
     }
 
-    const constraints = {
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        facingMode: "user"
-      },
-      audio: false
-    };
-
-    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-    if (this.videoElement) {
-      this.videoElement.srcObject = this.stream;
-      await new Promise((resolve) => {
-        this.videoElement.onloadedmetadata = () => {
-          this.videoElement.play();
-          resolve();
-        };
-      });
-    }
+    return true;
   }
 
   setMode(mode) {
@@ -125,22 +182,39 @@ class MotionDetector {
   }
 
   /**
-   * 실시간 프레임 루프
+   * 실시간 비디오 프레임 루프
    */
   _predictLoop() {
     if (!this.isRunning) return;
 
     if (this.videoElement && this.videoElement.readyState >= 2) {
-      const startTimeMs = performance.now();
-      
+      // 캔버스 크기 비디오와 동기화
+      if (this.canvasElement && this.videoElement.videoWidth > 0) {
+        if (this.canvasElement.width !== this.videoElement.videoWidth || 
+            this.canvasElement.height !== this.videoElement.videoHeight) {
+          this.canvasElement.width = this.videoElement.videoWidth;
+          this.canvasElement.height = this.videoElement.videoHeight;
+        }
+      }
+
       let candidate = null;
 
-      if (this.mode === "HEAD_TILT" && this.faceLandmarker) {
-        candidate = this._detectHeadTilt(startTimeMs);
-      } else if (this.mode === "FINGER_COUNT" && this.handLandmarker) {
-        candidate = this._detectFingerCount(startTimeMs);
-      } else if (this.faceLandmarker) {
-        candidate = this._detectHeadTilt(startTimeMs);
+      // AI 모델이 준비되었을 때만 추론 실행
+      if (this.isAiReady && this.videoElement.currentTime !== this.lastVideoTime) {
+        this.lastVideoTime = this.videoElement.currentTime;
+        const startTimeMs = performance.now();
+
+        try {
+          if (this.mode === "HEAD_TILT" && this.faceLandmarker) {
+            candidate = this._detectHeadTilt(startTimeMs);
+          } else if (this.mode === "FINGER_COUNT" && this.handLandmarker) {
+            candidate = this._detectFingerCount(startTimeMs);
+          } else if (this.faceLandmarker) {
+            candidate = this._detectHeadTilt(startTimeMs);
+          }
+        } catch (e) {
+          // 비디오 프레임 동기화 일시 오류 무시
+        }
       }
 
       // 선택 상태 업데이트 및 확정 처리
@@ -152,7 +226,6 @@ class MotionDetector {
 
   /**
    * 고개 기울임(Roll) 계산
-   * 좌우 눈꼬리 랜드마크: 33 (오른눈 안/바깥쪽), 263 (왼눈 바깥쪽)
    */
   _detectHeadTilt(timestamp) {
     const results = this.faceLandmarker.detectForVideo(this.videoElement, timestamp);
@@ -163,16 +236,13 @@ class MotionDetector {
     }
 
     const landmarks = results.faceLandmarks[0];
-    const leftEye = landmarks[263];  // 사용자 기준 왼쪽 눈 (카메라 화면)
-    const rightEye = landmarks[33];  // 사용자 기준 오른쪽 눈
+    const leftEye = landmarks[263];  // 사용자 왼쪽 눈
+    const rightEye = landmarks[33];  // 사용자 오른쪽 눈
 
-    // 기울기 각도 계산 (라디안 -> 도)
     const dx = rightEye.x - leftEye.x;
     const dy = rightEye.y - leftEye.y;
     let angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
 
-    // 미러링된 화면 기준 각도 보정
-    // 사용자가 오른쪽으로 고개를 젖히면 화면 기준 오른쪽(선택지 2번), 왼쪽으로 젖히면 1번
     this.lastAngle = angleDeg;
     this._drawTiltGuide(leftEye, rightEye, angleDeg);
 
@@ -199,11 +269,8 @@ class MotionDetector {
     }
 
     const hand = results.landmarks[0];
-    const wrist = hand[0];
     let count = 0;
 
-    // 검지, 중지, 약지, 소지 끝(Tip) vs 관절(PIP) y위치 비교
-    // 손끝(8, 12, 16, 20)이 해당 관절(6, 10, 14, 18)보다 위(y값이 더 작음)에 있으면 펴진 것으로 판정
     const fingerTips = [8, 12, 16, 20];
     const fingerPips = [6, 10, 14, 18];
 
@@ -247,7 +314,6 @@ class MotionDetector {
         this.onSelectionProgress(candidate, 0.05);
       }
     } else {
-      // 중립/인식 안 됨
       if (this.currentCandidate !== null) {
         this.currentCandidate = null;
         this.candidateStartTime = 0;
@@ -256,7 +322,6 @@ class MotionDetector {
     }
   }
 
-  // ===== 캔버스 가이드 시각화 =====
   _clearCanvas() {
     if (!this.canvasElement) return;
     const ctx = this.canvasElement.getContext("2d");
@@ -276,20 +341,19 @@ class MotionDetector {
 
     ctx.save();
     ctx.strokeStyle = Math.abs(angle) > this.TILT_THRESHOLD_DEG ? "#4ade80" : "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
-    // 중심 기준 수평 가이드 점선
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.setLineDash([6, 6]);
     ctx.beginPath();
-    ctx.moveTo(midX - 40, midY);
-    ctx.lineTo(midX + 40, midY);
+    ctx.moveTo(midX - 50, midY);
+    ctx.lineTo(midX + 50, midY);
     ctx.stroke();
 
     ctx.restore();
@@ -305,20 +369,16 @@ class MotionDetector {
     ctx.fillStyle = "#38bdf8";
     hand.forEach(pt => {
       ctx.beginPath();
-      ctx.arc(pt.x * w, pt.y * h, 4, 0, 2 * Math.PI);
+      ctx.arc(pt.x * w, pt.y * h, 5, 0, 2 * Math.PI);
       ctx.fill();
     });
 
-    // 손목 근처에 인식된 숫자 표시
-    ctx.font = "bold 24px sans-serif";
+    ctx.font = "bold 28px sans-serif";
     ctx.fillStyle = "#facc15";
-    ctx.fillText(`${count}번`, hand[0].x * w, hand[0].y * h - 20);
+    ctx.fillText(`${count}번 선택 중`, hand[0].x * w, hand[0].y * h - 20);
     ctx.restore();
   }
 
-  /**
-   * 리소스 정리
-   */
   destroy() {
     this.isRunning = false;
     if (this.animationFrameId) {
