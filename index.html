@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>모두의 모션인식 퀴즈 - 국어 교실 실시간 퀴즈</title>
+  
+  <!-- Pretendard & Jua 폰트 -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+
+  <!-- 스타일시트 -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- MediaPipe Tasks Vision CDN (FaceLandmarker & HandLandmarker) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <!-- 전체 앱 컨테이너 -->
+  <main class="app-container">
+
+    <!-- 1. 웹캠 및 캔버스 비전 레이어 -->
+    <div class="webcam-container">
+      <video id="webcam-video" playsinline autoplay muted></video>
+      <canvas id="webcam-canvas" width="640" height="480"></canvas>
+    </div>
+
+    <!-- 2. 게임 메인 UI 오버레이 -->
+    <div id="game-screen" class="ui-overlay hidden">
+      
+      <!-- 상단 헤더 (진행도, 원형 타이머, 점수/콤보) -->
+      <header class="game-header interactive">
+        <div class="hud-left">
+          <div class="quiz-progress-badge">
+            Q <span id="current-q-num">1</span> / <span id="total-q-num">5</span>
+          </div>
+          <div id="combo-badge" class="combo-badge hidden">
+            🔥 <span id="current-combo-val">2</span> COMBO
+          </div>
+        </div>
+
+        <!-- 중앙 원형 SVG 타이머 -->
+        <div class="timer-container">
+          <svg class="timer-svg" viewBox="0 0 100 100">
+            <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
+            <circle id="timer-circle-progress" class="timer-progress" cx="50" cy="50" r="45" stroke-dasharray="283" stroke-dashoffset="0"></circle>
+          </svg>
+          <span id="timer-text" class="timer-text">15</span>
+        </div>
+
+        <div class="hud-right">
+          <div class="score-display">
+            <span class="score-label">Score</span>
+            <span id="current-score-val" class="score-val">0</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- 중앙 칠판형 문제 카드 -->
+      <section class="question-section interactive">
+        <div id="question-card" class="chalkboard-card card-enter">
+          <span id="question-category" class="question-badge">국어 맞춤법</span>
+          <h2 id="question-text" class="question-text">문제가 여기에 표시됩니다.</h2>
+        </div>
+        <div id="motion-guide-text" class="motion-guide-bar">
+          💡 고개를 좌/우로 기울여 선택지를 선택하세요!
+        </div>
+      </section>
+
+      <!-- 하단 선택지 영역 (2지선다 / 4지선다) -->
+      <section class="options-section interactive">
+        <div id="options-container" class="options-grid-2">
+          <!-- JS 동적 생성 -->
+        </div>
+      </section>
+
+      <!-- 정오답 피드백 팝업 -->
+      <div id="feedback-overlay" class="feedback-overlay hidden">
+        <div id="feedback-text">정답!</div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- 폭죽 컨페티 컨테이너 -->
+  <div id="confetti-container"></div>
+
+  <!-- 3. 시작 화면 모달 -->
+  <div id="start-screen" class="modal-backdrop">
+    <div class="start-card">
+      <h1 class="start-title">모두의 모션인식 퀴즈 🎓</h1>
+      <p class="start-desc">손을 대지 않고 <strong>고개나 손동작</strong>만으로 정답을 맞히는 실시간 국어 퀴즈 웹앱</p>
+
+      <div class="rule-box">
+        <div class="rule-item">
+          <span>🎯</span>
+          <span><strong>2지선다:</strong> 고개를 왼쪽(1번) 또는 오른쪽(2번)으로 0.5초 기울이기</span>
+        </div>
+        <div class="rule-item">
+          <span>🖐️</span>
+          <span><strong>4지선다:</strong> 손가락(1~4개)을 펼쳐 번호 지정하기</span>
+        </div>
+        <div class="rule-item">
+          <span>⚡</span>
+          <span><strong>보너스:</strong> 빠르게 맞힐수록 속도 점수 + 연속 정답 콤보 가산!</span>
+        </div>
+        <div class="rule-item">
+          <span>⌨️</span>
+          <span>(마우스 클릭 및 키보드 1~4번/방향키로도 플레이 가능)</span>
+        </div>
+      </div>
+
+      <button id="start-game-btn" class="btn-primary">카메라 켜고 게임 시작하기 🚀</button>
+      
+      <div>
+        <a href="admin.html" class="btn-secondary" style="display:inline-block; text-decoration:none; margin-top:20px;">
+          ⚙️ 문제 관리 & 설정 (관리자)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 로딩 오버레이 -->
+  <div id="loading-overlay" class="modal-backdrop hidden">
+    <div class="start-card" style="max-width: 400px;">
+      <div style="font-size: 2.5rem; margin-bottom: 16px; animation: pulse-glow 1s infinite alternate;">⏳</div>
+      <h3 style="font-size: 1.3rem; margin-bottom: 8px;">게임 로딩 중...</h3>
+      <p id="loading-status-text" style="color: var(--text-muted); font-size: 0.95rem;">AI 비전 모델을 불러오고 있습니다.</p>
+    </div>
+  </div>
+
+  <!-- 5. 결과 및 랭킹 모달 -->
+  <div id="result-screen" class="modal-backdrop hidden">
+    <div class="result-card">
+      <h2 style="font-size: 2rem; font-weight: 900; margin-bottom: 8px;">🎉 퀴즈 종료!</h2>
+      
+      <div class="result-score-box">
+        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">최종 획득 점수</div>
+        <div id="final-score-val" class="final-score-text">0</div>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-title">맞힌 문제</div>
+            <div id="correct-stat" class="stat-val">0 / 5</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-title">최대 콤보</div>
+            <div id="max-combo-stat" class="stat-val">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-title">정답률</div>
+            <div id="accuracy-stat" class="stat-val">0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 랭킹 등록 폼 -->
+      <div style="display:flex; gap: 8px; margin-bottom: 16px;">
+        <input type="text" id="player-name-input" class="form-control" placeholder="참가자 이름 / 학번" maxlength="10">
+        <button id="submit-ranking-btn" class="btn-primary" style="width: auto; padding: 10px 20px; font-size: 1rem; flex-shrink: 0;">기록 저장</button>
+      </div>
+
+      <!-- 랭킹 목록 -->
+      <div class="leaderboard-container">
+        <h4 style="font-size: 1rem; color: var(--accent-yellow); margin-bottom: 10px;">🏆 명예의 전당 Top 10</h4>
+        <ul id="leaderboard-list" class="leaderboard-list">
+          <!-- 동적 렌더링 -->
+        </ul>
+      </div>
+
+      <button id="restart-game-btn" class="btn-primary" style="margin-top: 10px;">다시 도전하기 🔄</button>
+    </div>
+  </div>
+
+  <!-- JS 모듈 로드 순서 -->
+  <script src="js/audio.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/motionDetector.js"></script>
+  <script src="js/ranking.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
