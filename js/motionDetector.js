@@ -283,6 +283,7 @@ class MotionDetector {
 
   resetSelection() {
     this.currentCandidate = null;
+    this.confirmedCandidate = null;
     this.candidateStartTime = 0;
     this.isConfirmed = false;
     this.onSelectionProgress(0, 0);
@@ -693,11 +694,10 @@ class MotionDetector {
   }
 
   /**
-   * 지속 시간 체크 및 확정 로직 (개인 모드 전용)
+   * 지속 시간 체크 및 선택 반영 로직 (개인 모드 전용)
+   * 고개를 기울여 일정 시간 유지하면 선택되고, 언제든 다른 번호로 변경 가능
    */
   _updateSelectionState(candidate) {
-    if (this.isConfirmed) return;
-
     const now = performance.now();
 
     if (candidate !== null) {
@@ -706,8 +706,8 @@ class MotionDetector {
         const progress = Math.min(1, elapsed / this.HOLD_DURATION_MS);
         this.onSelectionProgress(candidate, progress);
 
-        if (progress >= 1 && !this.isConfirmed) {
-          this.isConfirmed = true;
+        if (progress >= 1 && this.confirmedCandidate !== candidate) {
+          this.confirmedCandidate = candidate;
           this.onSelectionConfirm(candidate);
         }
       } else {

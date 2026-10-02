@@ -92,6 +92,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let timeLeft = 15;
   let timeLimit = 15;
   let isAnswerLocked = false;
+  let currentChosenOption = null; // 현재 문제에서 선택된 답 번호 (1, 2, 3, 4)
+  let chosenTimeLeft = 0; // 답을 선택한 시점의 남은 시간 (속도 보너스 계산용)
 
   // 모션 디텍터 인스턴스
   let motionDetector = null;
@@ -275,19 +277,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     isAnswerLocked = false;
+    currentChosenOption = null;
+    chosenTimeLeft = 0;
     currentQuestion = questions[currentIndex];
     currentQNumEl.textContent = currentIndex + 1;
 
     // 모션 모드 전환
     if (currentQuestion.type === "4지선다" && playMode === "INDIVIDUAL") {
       motionDetector.setMode("FINGER_COUNT");
-      motionGuideText.textContent = "💡 손가락 개수(1~4개)를 펴서 번호를 선택하세요!";
+      motionGuideText.textContent = "💡 손가락 개수(1~4개)를 펴서 번호를 선택하세요! (제한시간 종료 시 최종 판정)";
     } else {
       motionDetector.setMode("HEAD_TILT");
       if (playMode === "GROUP") {
         motionGuideText.textContent = "💡 학생 전원: 고개를 왼쪽(1번) 또는 오른쪽(2번)으로 기울여 투표하세요! (Enter: 조기마감)";
       } else {
-        motionGuideText.textContent = "💡 도전자: 화면 중앙에서 고개를 왼쪽(1번) 또는 오른쪽(2번)으로 기울이세요!";
+        motionGuideText.textContent = "💡 도전자: 고개를 왼쪽(1번) 또는 오른쪽(2번)으로 기울여 선택하세요! (제한시간 종료 시 최종 판정)";
       }
     }
 
@@ -464,19 +468,27 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * 정답 선택 처리 (개인 모드)
+   * 정답 선택 처리 (개인 모드: 실시간 선택 및 변경, 타이머는 계속 진행)
    */
   function handleOptionSelected(chosenIndex) {
     if (isAnswerLocked) return;
-    isAnswerLocked = true;
-    clearInterval(timerInterval);
 
-    const isCorrect = chosenIndex === currentQuestion.answer;
-    showIndividualAnswerFeedback(isCorrect, chosenIndex);
+    currentChosenOption = chosenIndex;
+    chosenTimeLeft = timeLeft;
+
+    // 선택지 UI 상태 업데이트
+    document.querySelectorAll(".option-bubble").forEach(b => b.classList.remove("is-selected"));
+    const selectedBubble = document.getElementById(`option-bubble-${chosenIndex}`);
+    if (selectedBubble) {
+      selectedBubble.classList.add("is-selected");
+    }
+
+    AudioPlayer.playSelect();
+    motionGuideText.textContent = `✔️ [${chosenIndex}번] 선택됨! (남은 시간 ${timeLeft}초 동안 자유롭게 변경 가능)`;
   }
 
   /**
-   * 시간 초과 처리
+   * 제한시간 종료 시점의 최종 판정 처리
    */
   function handleTimeOut() {
     if (isAnswerLocked) return;
@@ -485,7 +497,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (playMode === "GROUP") {
       handleGroupQuestionEnd();
     } else {
+      finalizeIndividualAnswer();
+    }
+  }
+
+  /**
+   * 개인 모드 제한시간 종료 시 최종 정오답 판정
+   */
+  function finalizeIndividualAnswer() {
+    if (currentChosenOption === null) {
+      // 아무것도 선택하지 않은 채 제한시간 종료
       showIndividualAnswerFeedback(false, null, true);
+    } else {
+      const isCorrect = currentChosenOption === currentQuestion.answer;
+      showIndividualAnswerFeedback(isCorrect, currentChosenOption, false);
     }
   }
 
@@ -563,8 +588,9 @@ document.addEventListener("DOMContentLoaded", () => {
       currentCombo++;
       if (currentCombo > maxCombo) maxCombo = currentCombo;
 
+      // 점수 공식: 기본 100점 + (선택 시점 남은 시간 x 10) + (콤보 보너스 10%씩)
       const baseScore = 100;
-      const speedBonus = timeLeft * 10;
+      const speedBonus = chosenTimeLeft * 10;
       const comboMultiplier = 1 + (currentCombo - 1) * 0.1;
       const earned = Math.round((baseScore + speedBonus) * comboMultiplier);
       currentScore += earned;
@@ -585,7 +611,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       AudioPlayer.playWrong();
       questionCard.classList.add("shake-card");
-      showFeedbackOverlay(false, isTimeout ? "시간 초과!" : "오답!", 0);
+      showFeedbackOverlay(false, isTimeout ? "시간 초과 (미선택)!" : "오답!", 0);
     }
 
     updateScoreUI();
@@ -595,7 +621,7 @@ document.addEventListener("DOMContentLoaded", () => {
       hideFeedbackOverlay();
       currentIndex++;
       loadNextQuestion();
-    }, 1600);
+    }, 1800);
   }
 
   function updateScoreUI() {

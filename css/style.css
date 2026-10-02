@@ -367,11 +367,23 @@ body {
   word-break: keep-all;
 }
 
-/* 하이라이트 & 정오답 상태 */
+/* 하이라이트(호버/기울임 진행 중) & 현재 선택 확정 & 정오답 상태 */
 .option-bubble.highlighted {
   border-color: #fff;
   box-shadow: 0 0 25px rgba(255, 255, 255, 0.5);
   transform: scale(1.03);
+}
+
+.option-bubble.is-selected {
+  background: rgba(30, 58, 138, 0.9) !important;
+  border-color: #facc15 !important; /* 황금빛 테두리 */
+  box-shadow: 0 0 30px rgba(250, 204, 21, 0.65), inset 0 0 15px rgba(250, 204, 21, 0.3) !important;
+  transform: scale(1.04);
+}
+
+.option-bubble.is-selected .option-badge {
+  background: #facc15 !important;
+  color: #0f172a !important;
 }
 
 .option-bubble.correct-choice {
