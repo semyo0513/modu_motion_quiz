@@ -46,6 +46,10 @@
           <div id="combo-badge" class="combo-badge hidden">
             🔥 <span id="current-combo-val">2</span> COMBO
           </div>
+          <!-- 현재 모드 뱃지 -->
+          <div id="game-mode-badge" class="mode-badge">
+            👤 1인 대표
+          </div>
         </div>
 
         <!-- 중앙 원형 SVG 타이머 -->
@@ -58,12 +62,30 @@
         </div>
 
         <div class="hud-right">
-          <div class="score-display">
+          <!-- 단체 모드용 실시간 학생 감지 수 -->
+          <div id="group-hud-stats" class="group-hud-stats hidden">
+            <span>👥 인식 학생: <strong id="detected-students-count">0</strong>명</span>
+          </div>
+          <!-- 개인 모드 점수 -->
+          <div id="individual-score-display" class="score-display">
             <span class="score-label">Score</span>
             <span id="current-score-val" class="score-val">0</span>
           </div>
         </div>
       </header>
+
+      <!-- 단체 모드 전용: 실시간 학급 투표 게이지 바 -->
+      <div id="group-vote-panel" class="group-vote-panel interactive hidden">
+        <div class="vote-meta">
+          <span class="vote-label-left">👈 1번 선택: <strong id="group-opt1-count">0</strong>명</span>
+          <span class="vote-label-center">대기: <span id="group-neutral-count">0</span>명</span>
+          <span class="vote-label-right">👉 2번 선택: <strong id="group-opt2-count">0</strong>명</span>
+        </div>
+        <div class="vote-bar-wrapper">
+          <div id="vote-bar-1" class="vote-bar-fill opt1-fill" style="width: 50%;"></div>
+          <div id="vote-bar-2" class="vote-bar-fill opt2-fill" style="width: 50%;"></div>
+        </div>
+      </div>
 
       <!-- 중앙 칠판형 문제 카드 -->
       <section class="question-section interactive">
@@ -88,6 +110,28 @@
         <div id="feedback-text">정답!</div>
       </div>
 
+      <!-- 단체 모드 전용 결과 피드백 배너 -->
+      <div id="group-result-overlay" class="group-result-overlay hidden">
+        <div class="group-result-card">
+          <h3 id="group-result-title" class="group-result-title">🎉 문제 결과 발표</h3>
+          <div class="group-result-stats">
+            <div class="res-stat correct-stat-box">
+              <span class="res-label">맞은 사람</span>
+              <span id="group-correct-count" class="res-val">0명</span>
+            </div>
+            <div class="res-stat wrong-stat-box">
+              <span class="res-label">틀린 사람</span>
+              <span id="group-wrong-count" class="res-val">0명</span>
+            </div>
+            <div class="res-stat rate-stat-box">
+              <span class="res-label">정답률</span>
+              <span id="group-correct-rate" class="res-val">0%</span>
+            </div>
+          </div>
+          <p id="group-result-desc" class="group-result-desc">잠시 후 다음 문제로 넘어갑니다...</p>
+        </div>
+      </div>
+
     </div>
 
   </main>
@@ -99,31 +143,52 @@
   <div id="start-screen" class="modal-backdrop">
     <div class="start-card">
       <h1 class="start-title">모두의 모션인식 퀴즈 🎓</h1>
-      <p class="start-desc">손을 대지 않고 <strong>고개나 손동작</strong>만으로 정답을 맞히는 실시간 국어 퀴즈 웹앱</p>
+      <p class="start-desc">전자칠판 & 모바일 완벽 호환! 손대지 않고 <strong>고개 동작</strong>으로 푸는 실시간 국어 퀴즈</p>
+
+      <!-- 모드 선택 탭 (1인 대표 vs 단체) -->
+      <div class="mode-select-box">
+        <div class="mode-label-header">🎮 플레이 모드를 선택하세요</div>
+        <div class="mode-toggle-group">
+          <button type="button" id="mode-individual-btn" class="mode-toggle-btn active">
+            <span class="mode-icon">👤</span>
+            <span class="mode-btn-title">1인 대표 모드</span>
+            <span class="mode-btn-desc">화면 정중앙 학생 얼굴 집중 인식</span>
+          </button>
+          <button type="button" id="mode-group-btn" class="mode-toggle-btn">
+            <span class="mode-icon">👥</span>
+            <span class="mode-btn-title">우리 반 단체 모드</span>
+            <span class="mode-btn-desc">여러 명 동시 인식 + 맞은/틀린 사람 수 집계</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 카메라 장치 선택 (전자칠판 내장/외장 카메라 스위칭) -->
+      <div class="camera-select-box">
+        <label for="camera-select" class="camera-select-label">📷 카메라 선택 (전자칠판 웹캠 전환):</label>
+        <select id="camera-select" class="form-control">
+          <option value="">기본 카메라 (자동 감지)</option>
+        </select>
+      </div>
 
       <div class="rule-box">
         <div class="rule-item">
           <span>🎯</span>
-          <span><strong>2지선다:</strong> 고개를 왼쪽(1번) 또는 오른쪽(2번)으로 0.5초 기울이기</span>
+          <span><strong>고개 기울이기:</strong> 왼쪽(1번) 또는 오른쪽(2번)으로 0.5초 기울이기</span>
         </div>
         <div class="rule-item">
-          <span>🖐️</span>
-          <span><strong>4지선다:</strong> 손가락(1~4개)을 펼쳐 번호 지정하기</span>
+          <span>👥</span>
+          <span><strong>단체 모드:</strong> 카메라에 나온 학생 전원의 답을 동시 집계해 정오답자 수 발표!</span>
         </div>
         <div class="rule-item">
-          <span>⚡</span>
-          <span><strong>보너스:</strong> 빠르게 맞힐수록 속도 점수 + 연속 정답 콤보 가산!</span>
-        </div>
-        <div class="rule-item">
-          <span>⌨️</span>
-          <span>(마우스 클릭 및 키보드 1~4번/방향키로도 플레이 가능)</span>
+          <span>👤</span>
+          <span><strong>1인 모드:</strong> 여러 명이 화면에 있어도 중앙에 선 도전자만 스마트 타겟팅!</span>
         </div>
       </div>
 
       <button id="start-game-btn" class="btn-primary">카메라 켜고 게임 시작하기 🚀</button>
       
       <div>
-        <a href="admin.html" class="btn-secondary" style="display:inline-block; text-decoration:none; margin-top:20px;">
+        <a href="admin.html" class="btn-secondary" style="display:inline-block; text-decoration:none; margin-top:16px;">
           ⚙️ 문제 관리 & 설정 (관리자)
         </a>
       </div>
@@ -142,40 +207,41 @@
   <!-- 5. 결과 및 랭킹 모달 -->
   <div id="result-screen" class="modal-backdrop hidden">
     <div class="result-card">
-      <h2 style="font-size: 2rem; font-weight: 900; margin-bottom: 8px;">🎉 퀴즈 종료!</h2>
+      <h2 id="result-main-title" style="font-size: 2rem; font-weight: 900; margin-bottom: 8px;">🎉 퀴즈 종료!</h2>
       
       <div class="result-score-box">
-        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">최종 획득 점수</div>
+        <div id="final-score-label" style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">최종 획득 점수</div>
         <div id="final-score-val" class="final-score-text">0</div>
         
         <div class="stats-grid">
           <div class="stat-item">
-            <div class="stat-title">맞힌 문제</div>
+            <div id="stat-title-1" class="stat-title">맞힌 문제</div>
             <div id="correct-stat" class="stat-val">0 / 5</div>
           </div>
           <div class="stat-item">
-            <div class="stat-title">최대 콤보</div>
+            <div id="stat-title-2" class="stat-title">최대 콤보</div>
             <div id="max-combo-stat" class="stat-val">0</div>
           </div>
           <div class="stat-item">
-            <div class="stat-title">정답률</div>
+            <div id="stat-title-3" class="stat-title">평균 정답률</div>
             <div id="accuracy-stat" class="stat-val">0%</div>
           </div>
         </div>
       </div>
 
-      <!-- 랭킹 등록 폼 -->
-      <div style="display:flex; gap: 8px; margin-bottom: 16px;">
-        <input type="text" id="player-name-input" class="form-control" placeholder="참가자 이름 / 학번" maxlength="10">
-        <button id="submit-ranking-btn" class="btn-primary" style="width: auto; padding: 10px 20px; font-size: 1rem; flex-shrink: 0;">기록 저장</button>
-      </div>
+      <!-- 개인 모드일 때만 랭킹 폼 표시 -->
+      <div id="individual-ranking-section">
+        <div style="display:flex; gap: 8px; margin-bottom: 16px;">
+          <input type="text" id="player-name-input" class="form-control" placeholder="도전자 이름 / 학번" maxlength="10">
+          <button id="submit-ranking-btn" class="btn-primary" style="width: auto; padding: 10px 20px; font-size: 1rem; flex-shrink: 0;">기록 저장</button>
+        </div>
 
-      <!-- 랭킹 목록 -->
-      <div class="leaderboard-container">
-        <h4 style="font-size: 1rem; color: var(--accent-yellow); margin-bottom: 10px;">🏆 명예의 전당 Top 10</h4>
-        <ul id="leaderboard-list" class="leaderboard-list">
-          <!-- 동적 렌더링 -->
-        </ul>
+        <div class="leaderboard-container">
+          <h4 style="font-size: 1rem; color: var(--accent-yellow); margin-bottom: 10px;">🏆 명예의 전당 Top 10</h4>
+          <ul id="leaderboard-list" class="leaderboard-list">
+            <!-- 동적 렌더링 -->
+          </ul>
+        </div>
       </div>
 
       <button id="restart-game-btn" class="btn-primary" style="margin-top: 10px;">다시 도전하기 🔄</button>
